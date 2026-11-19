@@ -1,0 +1,108 @@
+CREATE DATABASE LinkedIn
+GO
+
+use LinkedIn
+GO
+
+CREATE TABLE Users
+(
+	UserID INT IDENTITY PRIMARY KEY,
+	FirstName NVARCHAR(100) NOT NULL,
+	LastName NVARCHAR(100) NOT NULL,
+	Phone NVARCHAR(20) NOT NULL UNIQUE,
+	Email VARCHAR(40) NOT NULL UNIQUE,
+		CHECK (Email LIKE '%_@_%._%'),
+	City VARCHAR(100) NOT NULL,
+	Password NVARCHAR(200) NOT NULL,
+	Role VARCHAR(100) NOT NULL
+		CHECK(Role IN('Employee','Recruiter', 'Admin'))
+);
+
+CREATE TABLE Fields
+(
+    FieldID INT IDENTITY PRIMARY KEY,
+    Field VARCHAR(50) NOT NULL UNIQUE, 
+);
+
+CREATE TABLE Countries
+(
+    CountryID INT IDENTITY PRIMARY KEY,
+    Name VARCHAR(56) NOT NULL UNIQUE
+);
+
+CREATE TABLE Companies
+(
+	CompanyID INT IDENTITY PRIMARY KEY,
+	Name NVARCHAR(150) NOT NULL UNIQUE,
+	Website NVARCHAR(150) NOT NULL UNIQUE,
+	Address NVARCHAR(200) NOT NULL,
+	City VARCHAR(170) NOT NULL,
+	CountryID INT NOT NULL REFERENCES Countries,
+	FieldID INT NOT NULL REFERENCES Fields
+);
+
+CREATE TABLE Followings
+(
+    UserID INT NOT NULL REFERENCES Users,
+    CompanyID INT NOT NULL REFERENCES Companies,
+    Date DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+
+    PRIMARY KEY(UserID,CompanyID)
+);
+
+CREATE TABLE Connections
+(
+    FollowingUserID INT NOT NULL REFERENCES Users,
+    FollowedUserID INT NOT NULL REFERENCES Users,
+    Date DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    Status VARCHAR(10) NOT NULL DEFAULT 'Pending'
+        CHECK (Status IN ('Pending', 'Accepted', 'Rejected')),
+
+    PRIMARY KEY(FollowingUserID,FollowedUserID),
+    CHECK(FollowingUserID<>FollowedUserID)
+);
+
+CREATE TABLE Jobs
+(
+    JobID INT IDENTITY PRIMARY KEY,
+    Title VARCHAR(100) NOT NULL,
+    Description VARCHAR(400) NOT NULL,
+    Salary Decimal(7,2) NOT NULL,
+    Currency VARCHAR(5) NOT NULL
+	CHECK(Currency IN('USD','EUR','RUB','CNY')),
+    FieldID INT NOT NULL REFERENCES Fields,
+
+    Deadline DATETIME2 NOT NULL,
+    CompanyID INT NOT NULL REFERENCES Companies
+);
+
+CREATE TABLE Skills
+(
+    SkillID INT NOT NULL PRIMARY KEY,
+    Name VARCHAR(30) NOT NULL UNIQUE
+);
+
+CREATE TABLE JobSkills
+(
+    JobID INT NOT NULL REFERENCES Jobs,
+    SkillID INT NOT NULL REFERENCES Skills,
+
+    PRIMARY KEY(JobID,SkillID)
+);
+
+CREATE TABLE UserSkills
+(
+    UserID INT NOT NULL REFERENCES Users,
+    SkillID INT NOT NULL REFERENCES Skills,
+
+    PRIMARY KEY(UserID,SkillID)
+);
+
+CREATE TABLE Applications
+(
+    UserID INT NOT NULL REFERENCES Users,
+    JobID INT NOT NULL REFERENCES Jobs,
+    Date DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+
+    PRIMARY KEY(UserID,JobID)
+);

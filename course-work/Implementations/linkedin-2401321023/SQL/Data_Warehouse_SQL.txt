@@ -1,0 +1,289 @@
+CREATE DATABASE LinkedIn_DW;
+GO
+
+USE LinkedIn_DW;
+GO
+
+
+CREATE TABLE DIM_DATE
+(
+    DateKey INT PRIMARY KEY,
+    FullDate DATE NOT NULL,
+    Day INT,
+    Month INT,
+    Quarter INT,
+    Year INT
+);
+
+CREATE TABLE DIM_USER
+(
+    UserKey INT IDENTITY PRIMARY KEY,
+    UserID INT NOT NULL,
+    FirstName NVARCHAR(100),
+    LastName NVARCHAR(100),
+    City VARCHAR(100),
+    Role VARCHAR(100)
+);
+
+CREATE TABLE DIM_JOB
+(
+    JobKey INT IDENTITY PRIMARY KEY,
+    JobID INT NOT NULL,
+    Title VARCHAR(100),
+    Description VARCHAR(400),
+    Deadline DATETIME2
+);
+
+CREATE TABLE DIM_COUNTRY
+(
+    CountryKey INT IDENTITY PRIMARY KEY,
+    CountryID INT NOT NULL,
+    CountryName VARCHAR(56)
+);
+
+CREATE TABLE DIM_COMPANY
+(
+    CompanyKey INT IDENTITY PRIMARY KEY,
+    CompanyID INT NOT NULL,
+    Name NVARCHAR(150),
+    Website NVARCHAR(150),
+    Address NVARCHAR(200),
+    City VARCHAR(170),
+    CountryKey INT NOT NULL,
+
+    FOREIGN KEY (CountryKey)
+        REFERENCES DIM_COUNTRY(CountryKey)
+);
+
+CREATE TABLE DIM_FIELD
+(
+    FieldKey INT IDENTITY PRIMARY KEY,
+    FieldID INT NOT NULL,
+    FieldName VARCHAR(50)
+);
+
+CREATE TABLE DIM_SKILL
+(
+    SkillKey INT IDENTITY PRIMARY KEY,
+    SkillID INT NOT NULL,
+    SkillName VARCHAR(30)
+);
+
+CREATE TABLE DIM_CURRENCY
+(
+    CurrencyKey INT IDENTITY PRIMARY KEY,
+    CurrencyCode VARCHAR(5) NOT NULL
+);
+GO
+
+
+CREATE TABLE FACT_APPLICATIONS
+(
+    ApplicationFactKey INT IDENTITY PRIMARY KEY,
+    DateKey INT NOT NULL,
+    UserKey INT NOT NULL,
+    JobKey INT NOT NULL,
+    CompanyKey INT NOT NULL,
+    ApplicationCount INT NOT NULL DEFAULT 1,
+
+    FOREIGN KEY (DateKey) REFERENCES DIM_DATE(DateKey),
+    FOREIGN KEY (UserKey) REFERENCES DIM_USER(UserKey),
+    FOREIGN KEY (JobKey) REFERENCES DIM_JOB(JobKey),
+    FOREIGN KEY (CompanyKey) REFERENCES DIM_COMPANY(CompanyKey)
+);
+
+CREATE TABLE FACT_JOBS
+(
+    JobFactKey INT IDENTITY PRIMARY KEY,
+    DateKey INT NOT NULL,
+    JobKey INT NOT NULL,
+    CompanyKey INT NOT NULL,
+    FieldKey INT NOT NULL,
+    CurrencyKey INT NOT NULL,
+    Salary DECIMAL(7,2) NOT NULL,
+    JobCount INT NOT NULL DEFAULT 1,
+
+    FOREIGN KEY (DateKey) REFERENCES DIM_DATE(DateKey),
+    FOREIGN KEY (JobKey) REFERENCES DIM_JOB(JobKey),
+    FOREIGN KEY (CompanyKey) REFERENCES DIM_COMPANY(CompanyKey),
+    FOREIGN KEY (FieldKey) REFERENCES DIM_FIELD(FieldKey),
+    FOREIGN KEY (CurrencyKey) REFERENCES DIM_CURRENCY(CurrencyKey)
+);
+
+CREATE TABLE FACT_JOB_SKILLS
+(
+    JobSkillFactKey INT IDENTITY PRIMARY KEY,
+    JobKey INT NOT NULL,
+    SkillKey INT NOT NULL,
+    SkillCount INT NOT NULL DEFAULT 1,
+
+    FOREIGN KEY (JobKey) REFERENCES DIM_JOB(JobKey),
+    FOREIGN KEY (SkillKey) REFERENCES DIM_SKILL(SkillKey)
+);
+GO
+
+
+
+
+
+
+
+-- USERS
+INSERT INTO DIM_USER
+    (UserID, FirstName, LastName, City, Role)
+SELECT
+    UserID, FirstName, LastName, City, Role
+FROM LinkedIn.dbo.Users;
+
+
+-- JOBS
+INSERT INTO DIM_JOB
+    (JobID, Title, Description, Deadline)
+SELECT
+    JobID, Title, Description, Deadline
+FROM LinkedIn.dbo.Jobs;
+
+
+-- COUNTRIES
+INSERT INTO DIM_COUNTRY (CountryID, CountryName)
+SELECT CountryID, Name
+FROM LinkedIn.dbo.Countries;
+
+
+
+-- COMPANIES
+INSERT INTO DIM_COMPANY
+    (CompanyID, Name, Website, Address, City, CountryKey)
+SELECT
+    C.CompanyID,
+    C.Name,
+    C.Website,
+    C.Address,
+    C.City,
+    DC.CountryKey
+FROM LinkedIn.dbo.Companies C
+JOIN DIM_COUNTRY DC
+    ON C.CountryID = DC.CountryID;
+
+
+-- FIELDS
+INSERT INTO DIM_FIELD
+    (FieldID, FieldName)
+SELECT
+    FieldID, Field
+FROM LinkedIn.dbo.Fields;
+
+
+-- SKILLS
+INSERT INTO DIM_SKILL
+    (SkillID, SkillName)
+SELECT
+    SkillID, Name
+FROM LinkedIn.dbo.Skills;
+
+
+-- CURRENCIES
+INSERT INTO DIM_CURRENCY (CurrencyCode)
+SELECT DISTINCT Currency
+FROM LinkedIn.dbo.Jobs;
+GO
+
+
+
+
+
+
+
+INSERT INTO DIM_DATE
+    (DateKey, FullDate, Day, Month, Quarter, Year)
+SELECT DISTINCT
+    CONVERT(INT, CONVERT(VARCHAR(8), DateValue, 112)),
+    CAST(DateValue AS DATE),
+    DAY(DateValue),
+    MONTH(DateValue),
+    DATEPART(QUARTER, DateValue),
+    YEAR(DateValue)
+FROM
+(
+    SELECT Date AS DateValue
+    FROM LinkedIn.dbo.Applications
+
+    UNION
+
+    SELECT Deadline AS DateValue
+    FROM LinkedIn.dbo.Jobs
+) AS Dates;
+GO
+
+
+
+
+
+
+
+INSERT INTO FACT_APPLICATIONS
+    (DateKey, UserKey, JobKey, CompanyKey, ApplicationCount)
+SELECT
+    CONVERT(INT, FORMAT(A.Date, 'yyyyMMdd')),
+    U.UserKey,
+    J.JobKey,
+    C.CompanyKey,
+    1
+FROM LinkedIn.dbo.Applications A
+JOIN DIM_USER U
+    ON A.UserID = U.UserID
+JOIN DIM_JOB J
+    ON A.JobID = J.JobID
+JOIN LinkedIn.dbo.Jobs OriginalJob
+    ON A.JobID = OriginalJob.JobID
+JOIN DIM_COMPANY C
+    ON OriginalJob.CompanyID = C.CompanyID;
+GO
+
+
+
+
+
+
+
+
+
+INSERT INTO FACT_JOBS
+    (DateKey, JobKey, CompanyKey, FieldKey,
+     CurrencyKey, Salary, JobCount)
+SELECT
+    CONVERT(INT, FORMAT(J.Deadline, 'yyyyMMdd')),
+    DJ.JobKey,
+    DC.CompanyKey,
+    DF.FieldKey,
+    DCur.CurrencyKey,
+    J.Salary,
+    1
+FROM LinkedIn.dbo.Jobs J
+JOIN DIM_JOB DJ
+    ON J.JobID = DJ.JobID
+JOIN DIM_COMPANY DC
+    ON J.CompanyID = DC.CompanyID
+JOIN DIM_FIELD DF
+    ON J.FieldID = DF.FieldID
+JOIN DIM_CURRENCY DCur
+    ON J.Currency = DCur.CurrencyCode;
+GO
+
+
+
+
+
+
+INSERT INTO FACT_JOB_SKILLS
+    (JobKey, SkillKey, SkillCount)
+SELECT
+    DJ.JobKey,
+    DS.SkillKey,
+    1
+FROM LinkedIn.dbo.JobSkills JS
+JOIN DIM_JOB DJ
+    ON JS.JobID = DJ.JobID
+JOIN DIM_SKILL DS
+    ON JS.SkillID = DS.SkillID;
+GO
